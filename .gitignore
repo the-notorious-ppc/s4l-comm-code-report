@@ -1,0 +1,15 @@
+# credentials — never commit these
+google-ads.yaml
+client_secret.json
+*.json.bak
+
+# generated at build time by the workflow
+docs/data.json
+
+# python
+__pycache__/
+*.pyc
+
+# Windows junk
+Thumbs.db
+desktop.ini

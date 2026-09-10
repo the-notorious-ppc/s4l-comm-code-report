@@ -1,0 +1,71 @@
+name: Daily report refresh
+
+on:
+  schedule:
+    - cron: "20 6 * * *"     # 06:20 UTC daily, staggered off the RF job
+  workflow_dispatch:          # lets you trigger it by hand from the Actions tab
+
+permissions:
+  contents: write             # to commit the updated archive
+  pages: write                # to publish the site
+  id-token: write
+
+concurrency:
+  group: daily-report
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Write credentials from secrets
+        run: |
+          cat > google-ads.yaml << 'YAML'
+          developer_token: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+          client_id: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+          client_secret: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+          refresh_token: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+          login_customer_id: "${{ secrets.GOOGLE_ADS_LOGIN_CUSTOMER_ID }}"
+          use_proto_plus: True
+          YAML
+
+      - name: Pull last 35 days
+        run: python pull.py
+
+      - name: Build site
+        run: python build.py
+
+      - name: Remove credentials
+        if: always()
+        run: rm -f google-ads.yaml
+
+      - name: Commit updated archive
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/daily.csv.gz
+          git diff --staged --quiet || git commit -m "Data refresh $(date -u +%Y-%m-%d)"
+          git push
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: refresh
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
